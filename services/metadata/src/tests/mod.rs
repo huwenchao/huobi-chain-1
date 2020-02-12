@@ -17,13 +17,13 @@ use protocol::{types::Bytes, ProtocolResult};
 use crate::types::UpdateMetadataPayload;
 use crate::MetadataService;
 
-const ADMISSION_TOKEN: Bytes = Bytes::from_static(b"node_manager");
+static ADMISSION_TOKEN: Bytes = Bytes::from_static(b"node_manager");
 
 #[test]
 fn test_get_metadata() {
     let cycles_limit = 1024 * 1024 * 1024; // 1073741824
     let caller = Address::from_hex("0x755cdba6ae4f479f7164792b318b2a06c759833b").unwrap();
-    let context = mock_context(cycles_limit, caller.clone());
+    let context = mock_context(cycles_limit, caller);
 
     let init_metadata = mock_metadata_1();
 
@@ -37,7 +37,7 @@ fn test_get_metadata() {
 fn test_update_metadata() {
     let cycles_limit = 1024 * 1024 * 1024; // 1073741824
     let caller = Address::from_hex("0x755cdba6ae4f479f7164792b318b2a06c759833b").unwrap();
-    let context = mock_context(cycles_limit, caller.clone());
+    let context = mock_context(cycles_limit, caller);
 
     let init_metadata = mock_metadata_1();
     let mut service = new_metadata_service(init_metadata.clone());

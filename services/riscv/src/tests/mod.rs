@@ -16,9 +16,7 @@ use protocol::types::{
 };
 use protocol::{Bytes, ProtocolResult};
 
-use crate::types::{
-    DeployPayload, ExecPayload, GetContractPayload, GetContractResp, InterpreterType,
-};
+use crate::types::{DeployPayload, ExecPayload, GetContractPayload, InterpreterType};
 use crate::RiscvService;
 
 type TestRiscvService = RiscvService<
@@ -71,8 +69,8 @@ fn test_deploy_and_run() {
 
     // test get_contract
     let get_contract_payload = GetContractPayload {
-        address,
-        get_code: true,
+        address:      address.clone(),
+        get_code:     true,
         storage_keys: vec![hex::encode("k"), "".to_owned(), "3a".to_owned()],
     };
     let get_contract_resp = service
