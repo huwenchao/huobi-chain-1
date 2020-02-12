@@ -76,7 +76,6 @@ fn test_deploy_and_run() {
     let get_contract_resp = service
         .get_contract(context.clone(), get_contract_payload)
         .unwrap();
-    dbg!(&get_contract_resp);
     assert_eq!(&get_contract_resp.code, &code);
     assert_eq!(&get_contract_resp.storage_values, &vec![
         hex::encode("init"),
