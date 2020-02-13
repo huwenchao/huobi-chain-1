@@ -46,7 +46,7 @@ impl<SDK: ServiceSDK + 'static> RiscvService<SDK> {
             .sdk
             .borrow()
             .get_value::<Hash, Bytes>(&contract.code_hash)?
-            .expect("get riscv contract code failed");
+            .ok_or_else(|| ServiceError::CodeNotFound)?;
         let interpreter_params = InterpreterParams {
             address: payload.address.clone(),
             code,
@@ -157,7 +157,7 @@ impl<SDK: ServiceSDK + 'static> RiscvService<SDK> {
                 .sdk
                 .borrow()
                 .get_value::<Hash, Bytes>(&contract.code_hash)?
-                .expect("get riscv contract code failed");
+                .ok_or_else(|| ServiceError::CodeNotFound)?;
             ctx.sub_cycles(code.len() as u64)?;
             resp.code = hex::encode(&code);
         }
@@ -264,6 +264,9 @@ pub enum ServiceError {
 
     #[display(fmt = "Contract {} not exists", _0)]
     ContractNotExists(String),
+
+    #[display(fmt = "code not found")]
+    CodeNotFound,
 
     #[display(fmt = "CKB VM return non zero, exitcode: {}, ret: {}", exitcode, ret)]
     NonZeroExitCode { exitcode: i8, ret: String },
