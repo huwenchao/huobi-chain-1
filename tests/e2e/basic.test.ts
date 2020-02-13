@@ -8,20 +8,20 @@ describe("basic API test via muta-sdk-js", () => {
   });
 
   test("getBlock", async () => {
-    const block = await client.getBlock('0x1');
+    const block = await client.getBlock("0x1");
     // console.log(block);
-    expect(block.header.height).toBe('0000000000000001');
+    expect(block.header.height).toBe("0000000000000001");
   });
 
   test("send tx, get tx and receipt", async () => {
     const tx = await client.composeTransaction({
-      method: 'create_asset',
+      method: "create_asset",
       payload: {
-        name: 'Muta Token',
-        symbol: 'MT',
-        supply: 1000000000,
+        name: "Muta Token",
+        symbol: "MT",
+        supply: 1000000000
       },
-      serviceName: 'asset',
+      serviceName: "asset"
     });
     const account = accounts[0];
     const signed_tx = account.signTransaction(tx);
@@ -33,5 +33,5 @@ describe("basic API test via muta-sdk-js", () => {
     const get_signed_tx = await client.getTransaction(hash);
     // console.log(get_signed_tx);
     expect(get_signed_tx.txHash).toBe(hash);
-  })
+  });
 });
