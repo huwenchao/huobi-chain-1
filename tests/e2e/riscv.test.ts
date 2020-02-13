@@ -18,7 +18,7 @@ async function deploy(code, init_args, intp_type) {
     // console.log(tx_hash);
 
     const receipt = await client.getReceipt(tx_hash);
-    console.log('deploy:', { tx_hash, receipt });
+    // console.log('deploy:', { tx_hash, receipt });
 
     const addr = JSON.parse(receipt.response.ret).address;
     return addr;
@@ -77,7 +77,7 @@ describe("riscv service", () => {
                 storage_keys: [Buffer.from('k', 'utf8').toString('hex'), '', '1a'],
             }),
         });
-        console.log(get_contract_res);
+        // console.log(get_contract_res);
         expect(get_contract_res.isError).toBeFalsy();
         const ret = JSON.parse(get_contract_res.ret);
         expect(ret.code).toBe(code.toString('hex'));

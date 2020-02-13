@@ -75,8 +75,7 @@ e2e-test:
 	@echo "-----------------------------------------------------------------"
 	@echo "run the commands below in another window first:                  "
 	@echo "                                                                 "
-	@echo "rm -rf ./target/tests/e2e && \                                   "
-	@echo "    cargo run --release -- -c tests/e2e/config.toml              "
+	@echo "rm -rf ./target/tests/e2e/data && cargo run --release -- -c tests/e2e/chain.toml -g tests/e2e/genesis.toml"
 	@echo "-----------------------------------------------------------------"
 	cd tests/e2e && yarn && ./wait-for-it.sh -t 300 localhost:8000 -- yarn run test
 

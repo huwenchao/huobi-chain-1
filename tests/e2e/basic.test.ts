@@ -26,7 +26,7 @@ describe("basic API test via muta-sdk-js", () => {
     const account = accounts[0];
     const signed_tx = account.signTransaction(tx);
     const hash = await client.sendTransaction(signed_tx);
-    console.log(hash);
+    // console.log(hash);
     const receipt = await client.getReceipt(hash);
     // console.log(receipt);
     expect(receipt.txHash).toBe(hash);
