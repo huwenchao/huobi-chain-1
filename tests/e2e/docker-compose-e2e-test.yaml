@@ -34,6 +34,7 @@ services:
       - /bin/sh
       - -c
       - |
-        yarn
+        cd /app/tests/e2e
+        npm install
         chmod +x ./wait-for-it.sh
         ./wait-for-it.sh -t 7200 chain:8000 -- yarn run test
