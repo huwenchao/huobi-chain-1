@@ -17,7 +17,7 @@ use crate::types::{
 };
 
 const ADMIN_KEY: &str = "admin";
-const ADMISSION_TOKEN: Bytes = Bytes::from_static(b"node_manager");
+static ADMISSION_TOKEN: Bytes = Bytes::from_static(b"node_manager");
 
 pub struct NodeManagerService<SDK> {
     sdk: SDK,
