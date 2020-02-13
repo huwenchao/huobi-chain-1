@@ -62,7 +62,7 @@ describe("riscv service", () => {
   test("test normal process", async () => {
     const code = readFileSync("../../services/riscv/src/tests/simple_storage");
     const addr = await deploy(code, "set k init", "Binary");
-    console.log(addr);
+    // console.log(addr);
     const v_init = await query(addr, "get k");
     expect(v_init.ret).toBe("init");
     const exec_res = await exec(addr, "set k v");
