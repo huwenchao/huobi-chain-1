@@ -16,7 +16,7 @@ async function deploy(code, init_args, intp_type) {
     method: "deploy",
     payload: {
       intp_type,
-      init_args: init_args,
+      init_args,
       code: code.toString("hex")
     },
     serviceName: "riscv"
