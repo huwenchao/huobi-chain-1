@@ -46,6 +46,12 @@ impl<SDK: ServiceSDK + 'static> RiscvService<SDK> {
     #[genesis]
     fn init_genesis(&mut self, payload: InitGenesisPayload) -> ProtocolResult<()> {
         self.enable_whitelist.set(payload.enable_whitelist)?;
+        if payload.enable_whitelist {
+            assert!(
+                !payload.admins.is_empty(),
+                "If riscv whitelist is enabled, you should set at least one admin in genesis.toml"
+            );
+        }
         for addr in payload.whitelist {
             self.deploy_auth.insert(addr, true)?;
         }
