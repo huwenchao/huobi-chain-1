@@ -54,12 +54,12 @@ uint64_t dummy_method() {
 }
 
 uint64_t test_call_dummy_method() {
-   uint8_t addr[50] = {0};
-   pvm_address(addr);
-   const char *args = "dummy_method";
-   uint8_t ret[2048] = {0};
-   uint64_t size = pvm_contract_call(addr, (uint8_t *)args, strlen(args), ret);
-   pvm_debug(ret);
+    uint8_t addr[50] = {0};
+    pvm_address(addr);
+    const char *args = "dummy_method";
+    uint8_t ret[2048] = {0};
+    uint64_t size = pvm_contract_call(addr, (uint8_t *)args, strlen(args), ret);
+    pvm_debug(ret);
     pvm_ret(ret, strlen(ret));
     return 0;
 }
