@@ -202,7 +202,6 @@ describe("riscv service", () => {
     let exec_res2 = await exec(addr, "dummy_method");
     // console.log(exec_res);
     expect(exec_res.response.ret).toBe(exec_res2.response.ret);
-    return;
 
     // invoke pvm_service_call failed
     exec_res = await exec(addr, "test_service_call_read_fail");
