@@ -64,6 +64,11 @@ uint64_t test_call_dummy_method() {
     return 0;
 }
 
+uint64_t test_assert() {
+    pvm_assert(0, "assert failed!");
+    return 0;
+}
+
 int main() {
     char args[1024] = {0};
     uint64_t args_len = pvm_load_args(args);
@@ -78,6 +83,8 @@ int main() {
         ret = test_transfer_from_contract();
     } else if (strcmp(args, "dummy_method") == 0) {
         ret = dummy_method();
+    } else if (strcmp(args, "test_assert") == 0) {
+        ret = test_assert();
     } else if (strcmp(args, "test_call_dummy_method") == 0) {
         ret = test_call_dummy_method();
     } else {

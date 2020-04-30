@@ -83,7 +83,7 @@ impl Interpreter {
 
         let ret_data = Rc::new(RefCell::new(Vec::new()));
         let cycles_lmit = self.context.get_cycles_limit();
-        let (exitcode, cycles) = match self.cfg.machine_type {
+        let (exitcode, exitmsg, cycles) = match self.cfg.machine_type {
             MachineType::NativeRust => {
                 let core_machine =
                     ckb_vm::DefaultCoreMachine::<u64, ckb_vm::SparseMemory<u64>>::new_with_max_cycles(
@@ -107,10 +107,16 @@ impl Interpreter {
                     Rc::<RefCell<_>>::clone(&self.chain),
                 )))
                 .build();
-                machine.load_program(&code, &args[..])?;
-                let exitcode = machine.run()?;
-                let cycles = machine.cycles();
-                (exitcode, cycles)
+                if let Err(_e) = machine.load_program(&code, &args[..]) {
+                    (-1, Bytes::from("invalid contract"), 0)
+                } else {
+                    let exitcode_res = machine.run();
+                    let cycles = machine.cycles();
+                    match exitcode_res {
+                        Ok(exitcode) => (exitcode, Bytes::from(ret_data.borrow().to_vec()), cycles),
+                        Err(e) => (-1, Bytes::from(e.to_string()), cycles),
+                    }
+                }
             }
             MachineType::Asm => {
                 let core_machine = AsmCoreMachine::new_with_max_cycles(cycles_lmit);
@@ -131,16 +137,21 @@ impl Interpreter {
                     )))
                     .build();
                 let mut machine = AsmMachine::new(machine, None);
-                machine.load_program(&code, &args[..])?;
-                let exitcode = machine.run()?;
-                let cycles = machine.machine.cycles();
-                (exitcode, cycles)
+                if let Err(_e) = machine.load_program(&code, &args[..]) {
+                    (-1, Bytes::from("invalid contract"), 0)
+                } else {
+                    let exitcode_res = machine.run();
+                    let cycles = machine.machine.cycles();
+                    match exitcode_res {
+                        Ok(exitcode) => (exitcode, Bytes::from(ret_data.borrow().to_vec()), cycles),
+                        Err(e) => (-1, Bytes::from(e.to_string()), cycles),
+                    }
+                }
             }
         };
-        let ret = ret_data.borrow();
         let result = InterpreterResult {
             ret_code:    exitcode,
-            ret:         Bytes::from(ret.to_vec()),
+            ret:         exitmsg,
             cycles_used: cycles,
         };
         Ok(result)

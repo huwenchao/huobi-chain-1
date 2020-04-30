@@ -6,7 +6,7 @@ import {
   accounts,
   admin,
   str2hex,
-  fee_asset_id
+  fee_asset_id,
 } from "./utils";
 import { add_fee_token_to_accounts, getBalance, transfer } from "./helper";
 import { readFileSync } from "fs";
@@ -23,9 +23,9 @@ async function deploy(code, init_args, intp_type, acc = null) {
     payload: {
       intp_type,
       init_args,
-      code: code.toString("hex")
+      code: code.toString("hex"),
     },
-    serviceName: "riscv"
+    serviceName: "riscv",
   });
   // console.log(tx);
   const tx_hash = await client.sendTransaction(
@@ -50,8 +50,8 @@ async function query(address, args) {
     method: "call",
     payload: JSON.stringify({
       address,
-      args
-    })
+      args,
+    }),
   });
   // console.log('query:', {address, args, res});
   res.ret = JSON.parse(res.ret);
@@ -61,12 +61,12 @@ async function query(address, args) {
 async function exec(address, args) {
   const payload = {
     address,
-    args
+    args,
   };
   const exec_tx = await client.composeTransaction({
     payload,
     serviceName: "riscv",
-    method: "exec"
+    method: "exec",
   });
   // console.log('send_tx:', {address, args, exec_tx});
   const tx_hash = await client.sendTransaction(
@@ -80,7 +80,7 @@ async function exec(address, args) {
 
 describe("riscv service", () => {
   beforeAll(async () => {
-    let accounts_to_add_fee = accounts.map(a => a.address);
+    let accounts_to_add_fee = accounts.map((a) => a.address);
     accounts_to_add_fee.push(account.address);
     await add_fee_token_to_accounts(accounts_to_add_fee);
   });
@@ -103,8 +103,8 @@ describe("riscv service", () => {
       serviceName: "riscv",
       method: "check_deploy_auth",
       payload: JSON.stringify({
-        addresses: [acc.address, accounts[2].address]
-      })
+        addresses: [acc.address, accounts[2].address],
+      }),
     });
     // console.log({deploy_auth_res});
     expect(deploy_auth_res.isError).toBe(false);
@@ -114,9 +114,9 @@ describe("riscv service", () => {
     let tx = await client.composeTransaction({
       method: "grant_deploy_auth",
       payload: {
-        addresses: [acc.address]
+        addresses: [acc.address],
       },
-      serviceName: "riscv"
+      serviceName: "riscv",
     });
     let tx_hash = await client.sendTransaction(admin.signTransaction(tx));
     let receipt = await client.getReceipt(tx_hash);
@@ -127,22 +127,22 @@ describe("riscv service", () => {
       serviceName: "riscv",
       method: "check_deploy_auth",
       payload: JSON.stringify({
-        addresses: [acc.address, accounts[2].address]
-      })
+        addresses: [acc.address, accounts[2].address],
+      }),
     });
     // console.log({deploy_auth_res});
     expect(deploy_auth_res.isError).toBe(false);
     expect(JSON.parse(deploy_auth_res.ret).addresses).toStrictEqual([
-      acc.address
+      acc.address,
     ]);
 
     // revoke auth
     tx = await client.composeTransaction({
       method: "revoke_deploy_auth",
       payload: {
-        addresses: [acc.address]
+        addresses: [acc.address],
       },
-      serviceName: "riscv"
+      serviceName: "riscv",
     });
     tx_hash = await client.sendTransaction(admin.signTransaction(tx));
     receipt = await client.getReceipt(tx_hash);
@@ -152,8 +152,8 @@ describe("riscv service", () => {
       serviceName: "riscv",
       method: "check_deploy_auth",
       payload: JSON.stringify({
-        addresses: [acc.address, accounts[2].address]
-      })
+        addresses: [acc.address, accounts[2].address],
+      }),
     });
     // console.log({deploy_auth_res});
     expect(deploy_auth_res.isError).toBe(false);
@@ -177,8 +177,8 @@ describe("riscv service", () => {
       payload: JSON.stringify({
         address: addr,
         get_code: true,
-        storage_keys: [Buffer.from("k", "utf8").toString("hex"), "", "1a"]
-      })
+        storage_keys: [Buffer.from("k", "utf8").toString("hex"), "", "1a"],
+      }),
     });
     // console.log(get_contract_res);
     expect(get_contract_res.isError).toBeFalsy();
@@ -187,7 +187,7 @@ describe("riscv service", () => {
     expect(ret.storage_values).toStrictEqual([
       Buffer.from("v", "utf8").toString("hex"),
       "",
-      ""
+      "",
     ]);
   });
 
@@ -205,11 +205,9 @@ describe("riscv service", () => {
 
     // invoke pvm_service_call failed
     exec_res = await exec(addr, "test_service_call_read_fail");
-    // console.log(exec_res);
+    console.log(exec_res);
     expect(
-      exec_res.response.ret.includes(
-        "[ProtocolError] Kind: Service Error: CkbVm(EcallError"
-      )
+      exec_res.response.ret.includes("Kind: BindingMacro Error: NotFoundMethod")
     ).toBe(true);
     expect(exec_res.response.ret.includes("NotFoundMethod")).toBe(true);
 
@@ -245,9 +243,11 @@ describe("riscv service", () => {
       const addr = await deploy(code, "invalid params", "Binary");
       expect(true).toBe(false);
     } catch (err) {
+      console.log({ err });
       expect(err.response.ret).toBe(
-        "[ProtocolError] Kind: Service Error: CkbVm(ParseError)"
+        `[ProtocolError] Kind: Service Error: NonZeroExitCode { exitcode: -1, ret: "invalid contract" }`
       );
+      expect(err.cyclesUsed === "0x0000000000000000").toBe(false);
     }
   });
 });

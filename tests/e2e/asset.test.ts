@@ -6,7 +6,7 @@ import {
   accounts,
   admin,
   fee_asset_id,
-  fee_account
+  fee_account,
 } from "./utils";
 
 async function createAsset(txSender, name, symbol, supply, precision) {
@@ -14,12 +14,12 @@ async function createAsset(txSender, name, symbol, supply, precision) {
     name,
     symbol,
     supply,
-    precision
+    precision,
   };
   const tx = await client.composeTransaction({
     method: "create_asset",
     payload,
-    serviceName: "asset"
+    serviceName: "asset",
   });
   const signed_tx = txSender.signTransaction(tx);
   const hash = await client.sendTransaction(signed_tx);
@@ -32,8 +32,8 @@ async function getAsset(assetID) {
     serviceName: "asset",
     method: "get_asset",
     payload: JSON.stringify({
-      id: assetID
-    })
+      id: assetID,
+    }),
   });
   return res;
 }
@@ -42,13 +42,13 @@ async function transfer(txSender, assetID, to, value) {
   const payload = {
     asset_id: assetID,
     to,
-    value
+    value,
   };
 
   const tx = await client.composeTransaction({
     method: "transfer",
     payload,
-    serviceName: "asset"
+    serviceName: "asset",
   });
   const signed_tx = txSender.signTransaction(tx);
   const hash = await client.sendTransaction(signed_tx);
@@ -62,8 +62,8 @@ async function getBalance(assetID, user) {
     method: "get_balance",
     payload: JSON.stringify({
       asset_id: assetID,
-      user: user
-    })
+      user: user,
+    }),
   });
   return res;
 }
@@ -72,13 +72,13 @@ async function approve(txSender, assetID, to, value) {
   const payload = {
     asset_id: assetID,
     to,
-    value
+    value,
   };
 
   const tx = await client.composeTransaction({
     method: "approve",
     payload,
-    serviceName: "asset"
+    serviceName: "asset",
   });
   const signed_tx = txSender.signTransaction(tx);
   const hash = await client.sendTransaction(signed_tx);
@@ -93,8 +93,8 @@ async function getAllowance(assetID, grantor, grantee) {
     payload: JSON.stringify({
       asset_id: assetID,
       grantor,
-      grantee
-    })
+      grantee,
+    }),
   });
   return res;
 }
@@ -104,13 +104,13 @@ async function transferFrom(txSender, assetID, sender, recipient, value) {
     asset_id: assetID,
     sender,
     recipient,
-    value
+    value,
   };
 
   const tx = await client.composeTransaction({
     method: "transfer_from",
     payload,
-    serviceName: "asset"
+    serviceName: "asset",
   });
   const signed_tx = txSender.signTransaction(tx);
   const hash = await client.sendTransaction(signed_tx);
@@ -134,7 +134,7 @@ describe("asset service API test via muta-sdk-js", () => {
     );
     // add fee token to accounts
     await Promise.all(
-      accounts.map(account =>
+      accounts.map((account) =>
         transfer(admin, fee_asset_id, account.address, 10000)
       )
     );
@@ -230,5 +230,20 @@ describe("asset service API test via muta-sdk-js", () => {
     );
     allowance = JSON.parse(alloRes.ret).value;
     expect(allowance).toBe(0);
+
+    // self transfer
+    const balanceResBefore = await getBalance(assetID, accounts[0].address);
+    const balanceBefore = JSON.parse(issuerBalanceRes.ret).balance;
+    const tranReceipt2 = await transfer(
+      accounts[0],
+      assetID,
+      accounts[0].address,
+      88
+    );
+    const balanceResAfter = await getBalance(assetID, accounts[0].address);
+    const balanceAfter = JSON.parse(issuerBalanceRes.ret).balance;
+    console.log({ balanceBefore, balanceAfter, tranReceipt2 });
+    expect(tranReceipt2.response.isError).toBe(false);
+    expect(balanceBefore).toBe(balanceAfter);
   });
 });

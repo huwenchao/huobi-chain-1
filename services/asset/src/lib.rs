@@ -347,7 +347,8 @@ impl<SDK: ServiceSDK> AssetService<SDK> {
         value: u64,
     ) -> ProtocolResult<()> {
         if sender == recipient {
-            return Err(ServiceError::RecipientIsSender.into());
+            // do nothing if sender is recipient, the tx_hook_before will charge the fee
+            return Ok(());
         }
 
         let mut sender_asset_balance: AssetBalance = self

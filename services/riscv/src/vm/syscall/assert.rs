@@ -21,12 +21,10 @@ impl<Mac: ckb_vm::SupportMachine> ckb_vm::Syscalls<Mac> for SyscallAssert {
         let assertion = machine.registers()[ckb_vm::registers::A0].to_u64();
         if assertion == 0 {
             let msg_ptr = machine.registers()[ckb_vm::registers::A1].to_u64();
-            if msg_ptr != 0 {
-                let msg = get_str(machine, msg_ptr)?;
-                log::debug!(target: "riscv_debug", "{}", msg);
-            }
+            let msg = get_str(machine, msg_ptr)?;
+            log::debug!(target: "riscv_debug", "{}", &msg);
 
-            Err(ckb_vm::Error::Unexpected)
+            Err(ckb_vm::Error::EcallError(SYSCODE_ASSERT, msg))
         } else {
             Ok(true)
         }
