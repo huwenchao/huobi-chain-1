@@ -6,4 +6,5 @@ Service 是 Muta 框架中用于扩展的抽象层，用户可以基于 Service 
 * [Asset Service](./asset_service.md)：支持用户发行 UDT，支持转账，查询等操作。
 * [RISC-V Service](./riscv_service.md)：支持用户用 c 语言进行合约的开发，本文档还将提供一个 [demo](./contract_demo) 详细阐述开发过程。
 * [Node Manager Service](./node_manager_service.md)：支持动态添加、删除节点。
-
+* [Admission_Control Service](./admission_control_service.md)：链的控制准入服务.可以配置过滤方法,进而过滤即将进入mempool的tx。
+* [KYC Service](./kyc_service.md)：KYC服务,用以提供火币公链的KYC需求.
