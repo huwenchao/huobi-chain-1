@@ -9,21 +9,21 @@ use bytes::Bytes;
 use derive_more::{Display, From};
 use serde::Serialize;
 
-use binding_macro::{cycles, genesis, hook_after, service, tx_hook_after};
+use binding_macro::{cycles, genesis, hook_after, service, tx_hook_after, tx_hook_before};
 use protocol::traits::{ExecutorParams, ServiceResponse, ServiceSDK, StoreMap};
 use protocol::types::{Address, Metadata, ServiceContext, ServiceContextParams};
 
 use crate::types::{
-    AccmulateProfitPayload, Asset, DiscountLevel, GovernanceInfo, InitGenesisPayload,
-    MinerChargeConfig, RecordProfitEvent, SetAdminEvent, SetAdminPayload, SetGovernInfoEvent,
-    SetGovernInfoPayload, SetMinerEvent, TransferFromPayload, UpdateIntervalEvent,
+    AccumulateProfitPayload, DiscountLevel, GovernanceInfo, HookTransferFromPayload,
+    InitGenesisPayload, MinerChargeConfig, RecordProfitEvent, SetAdminEvent, SetAdminPayload,
+    SetGovernInfoEvent, SetGovernInfoPayload, SetMinerEvent, UpdateIntervalEvent,
     UpdateIntervalPayload, UpdateMetadataEvent, UpdateMetadataPayload, UpdateRatioEvent,
     UpdateRatioPayload, UpdateValidatorsEvent, UpdateValidatorsPayload,
 };
 use std::convert::{From, TryInto};
 
 #[cfg(not(test))]
-use crate::types::{GetBalancePayload, GetBalanceResponse};
+use crate::types::{Asset, GetBalancePayload, GetBalanceResponse};
 
 const INFO_KEY: &str = "admin";
 const TX_FEE_INLET_KEY: &str = "fee_address";
@@ -31,6 +31,26 @@ const MINER_PROFIT_OUTLET_KEY: &str = "miner_address";
 const MILLION: u64 = 1_000_000;
 const HUNDRED: u64 = 100;
 static ADMISSION_TOKEN: Bytes = Bytes::from_static(b"governance");
+
+macro_rules! require_admin {
+    ($service: expr, $ctx:expr) => {
+        if !$service.is_admin($ctx) {
+            return ServiceError::NonAuthorized.into();
+        }
+    };
+}
+
+macro_rules! get_info {
+    ($service:expr) => {{
+        let tmp = $service
+            .sdk
+            .get_value::<_, GovernanceInfo>(&INFO_KEY.to_owned());
+        if tmp.is_none() {
+            return ServiceError::MissingInfo.into();
+        }
+        tmp.unwrap()
+    }};
+}
 
 pub struct GovernanceService<SDK> {
     sdk:     SDK,
@@ -73,67 +93,50 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
     #[cycles(210_00)]
     #[read]
     fn get_admin_address(&self, ctx: ServiceContext) -> ServiceResponse<Address> {
-        let info: GovernanceInfo = self
+        if let Some(info) = self
             .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
-
-        ServiceResponse::from_succeed(info.admin)
+            .get_value::<_, GovernanceInfo>(&INFO_KEY.to_owned())
+        {
+            ServiceResponse::from_succeed(info.admin)
+        } else {
+            ServiceResponse::from_error(198, "Missing info".to_owned())
+        }
     }
 
     #[cycles(210_00)]
     #[read]
     fn get_govern_info(&self, ctx: ServiceContext) -> ServiceResponse<GovernanceInfo> {
-        let info: GovernanceInfo = self
-            .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
-
+        let info = get_info!(self);
         ServiceResponse::from_succeed(info)
     }
 
     #[cycles(210_00)]
     #[read]
     fn get_tx_failure_fee(&self, ctx: ServiceContext) -> ServiceResponse<u64> {
-        let info: GovernanceInfo = self
-            .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
-
+        let info = get_info!(self);
         ServiceResponse::from_succeed(info.tx_failure_fee)
     }
 
     #[cycles(210_00)]
     #[read]
     fn get_tx_floor_fee(&self, ctx: ServiceContext) -> ServiceResponse<u64> {
-        let info: GovernanceInfo = self
-            .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
-
+        let info = get_info!(self);
         ServiceResponse::from_succeed(info.tx_floor_fee)
     }
 
     #[cycles(210_00)]
     #[write]
     fn set_admin(&mut self, ctx: ServiceContext, payload: SetAdminPayload) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
+        let mut info = get_info!(self);
 
-        let mut info: GovernanceInfo = self
-            .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
         info.admin = payload.admin.clone();
-
         self.sdk.set_value(INFO_KEY.to_owned(), info);
 
         let event = SetAdminEvent {
-            topic: "Set New Admin".to_owned(),
             admin: payload.admin,
         };
-        Self::emit_event(&ctx, event)
+        Self::emit_event(&ctx, "SetAdmin".to_owned(), event)
     }
 
     #[cycles(210_00)]
@@ -143,19 +146,14 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: SetGovernInfoPayload,
     ) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
 
         let mut info = payload.inner;
         info.tx_fee_discount.sort();
         self.sdk.set_value(INFO_KEY.to_owned(), info.clone());
 
-        let event = SetGovernInfoEvent {
-            topic: "Set New Govern Info".to_owned(),
-            info,
-        };
-        Self::emit_event(&ctx, event)
+        let event = SetGovernInfoEvent { info };
+        Self::emit_event(&ctx, "SetGovernInfo".to_owned(), event)
     }
 
     #[cycles(210_00)]
@@ -165,19 +163,14 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: MinerChargeConfig,
     ) -> ServiceResponse<()> {
-        if ctx.get_caller() != payload.address {
-            return ServiceResponse::from_error(103, "Can only set own miner address".to_owned());
-        }
+        require_admin!(self, &ctx);
 
         self.miners.insert(
             payload.address.clone(),
             payload.miner_charge_address.clone(),
         );
-        let event = SetMinerEvent {
-            topic: "Set New Miner Info".to_owned(),
-            info:  payload,
-        };
-        Self::emit_event(&ctx, event)
+        let event = SetMinerEvent { info: payload };
+        Self::emit_event(&ctx, "SetMiner".to_owned(), event)
     }
 
     #[cycles(210_00)]
@@ -187,15 +180,17 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: UpdateMetadataPayload,
     ) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
 
         if let Err(err) = self.write_metadata(&ctx, payload.clone()) {
             return err;
         }
 
-        Self::emit_event(&ctx, UpdateMetadataEvent::from(payload))
+        Self::emit_event(
+            &ctx,
+            "UpdateMetadata".to_owned(),
+            UpdateMetadataEvent::from(payload),
+        )
     }
 
     #[cycles(210_00)]
@@ -205,9 +200,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: UpdateValidatorsPayload,
     ) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
 
         let mut metadata = match self.get_metadata(&ctx) {
             Ok(m) => m,
@@ -219,7 +212,11 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             return err;
         }
 
-        Self::emit_event(&ctx, UpdateValidatorsEvent::from(payload))
+        Self::emit_event(
+            &ctx,
+            "UpdateValidators".to_owned(),
+            UpdateValidatorsEvent::from(payload),
+        )
     }
 
     #[cycles(210_00)]
@@ -229,9 +226,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: UpdateIntervalPayload,
     ) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
 
         let mut metadata = match self.get_metadata(&ctx) {
             Ok(m) => m,
@@ -243,7 +238,11 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             return err;
         }
 
-        Self::emit_event(&ctx, UpdateIntervalEvent::from(payload))
+        Self::emit_event(
+            &ctx,
+            "UpdateInterval".to_owned(),
+            UpdateIntervalEvent::from(payload),
+        )
     }
 
     #[cycles(210_00)]
@@ -253,9 +252,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: ServiceContext,
         payload: UpdateRatioPayload,
     ) -> ServiceResponse<()> {
-        if !self.is_admin(&ctx) {
-            return ServiceError::NonAuthorized.into();
-        }
+        require_admin!(self, &ctx);
 
         let mut metadata = match self.get_metadata(&ctx) {
             Ok(m) => m,
@@ -270,7 +267,11 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             return err;
         }
 
-        Self::emit_event(&ctx, UpdateRatioEvent::from(payload))
+        Self::emit_event(
+            &ctx,
+            "UpdateRatio".to_owned(),
+            UpdateRatioEvent::from(payload),
+        )
     }
 
     #[cycles(210_00)]
@@ -278,7 +279,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
     fn accumulate_profit(
         &mut self,
         ctx: ServiceContext,
-        payload: AccmulateProfitPayload,
+        payload: AccumulateProfitPayload,
     ) -> ServiceResponse<()> {
         let address = payload.address;
         let new_profit = payload.accumulated_profit;
@@ -287,13 +288,13 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             if let Some(profit_sum) = profit.checked_add(new_profit) {
                 self.profits.insert(address.clone(), profit_sum);
             } else {
-                return ServiceResponse::from_error(101, "profit overflow".to_owned());
+                return ServiceError::Overflow.into();
             }
         } else {
             self.profits.insert(address.clone(), new_profit);
         }
 
-        Self::emit_event(&ctx, RecordProfitEvent {
+        Self::emit_event(&ctx, "RecordProfit".to_owned(), RecordProfitEvent {
             owner:  address,
             amount: new_profit,
         });
@@ -301,7 +302,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ServiceResponse::from_succeed(())
     }
 
-    fn calc_profit_records(&mut self, _ctx: &ServiceContext) -> u64 {
+    fn calc_profit_records(&mut self, _ctx: &ServiceContext) -> Result<u64, ServiceError> {
         let profits = self
             .profits
             .iter()
@@ -309,55 +310,115 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             .collect::<Vec<_>>();
 
         let mut profit_sum = 0u64;
-
         for (owner, profit) in profits.iter() {
-            profit_sum = profit_sum.checked_add(profit.to_owned()).unwrap();
-            self.profits.insert(owner.clone(), 0);
+            if let Some(tmp) = profit_sum.checked_add(profit.to_owned()) {
+                profit_sum = tmp;
+                self.profits.insert(owner.clone(), 0);
+            } else {
+                return Err(ServiceError::Overflow);
+            }
         }
 
-        profit_sum
+        Ok(profit_sum)
     }
 
-    #[cfg(test)]
-    fn profits_len(&self) -> u64 {
-        self.profits.len()
+    #[tx_hook_before]
+    fn pledge_fee(&mut self, ctx: ServiceContext) -> ServiceResponse<String> {
+        let info = self
+            .sdk
+            .get_value::<_, GovernanceInfo>(&INFO_KEY.to_owned());
+        let tx_fee_inlet_address = self
+            .sdk
+            .get_value::<_, Address>(&TX_FEE_INLET_KEY.to_owned());
+
+        if info.is_none() || tx_fee_inlet_address.is_none() {
+            return ServiceError::MissingInfo.into();
+        }
+
+        let info = info.unwrap();
+        let tx_fee_inlet_address = tx_fee_inlet_address.unwrap();
+        // clean fee
+        let profits = self.profits.iter().map(|pair| pair.0).collect::<Vec<_>>();
+
+        profits
+            .into_iter()
+            .for_each(|addr| self.profits.insert(addr, 0));
+
+        // Pledge the tx failure fee before executed the transaction.
+        let ret = self.hook_transfer_from(&ctx, HookTransferFromPayload {
+            sender:    ctx.get_caller(),
+            recipient: tx_fee_inlet_address,
+            value:     info.tx_failure_fee,
+            memo:      "pledge tx failure fee".to_string(),
+        });
+
+        if let Err(e) = ret {
+            if e.is_error() {
+                return ServiceResponse::from_error(e.code, e.error_message);
+            }
+        }
+
+        ServiceResponse::from_succeed("".to_owned())
     }
 
     #[tx_hook_after]
-    fn handle_tx_fee(&mut self, ctx: ServiceContext) {
-        let asset = self
-            .get_native_asset(&ctx)
-            .expect("Can not get native asset");
-
+    fn deduct_fee(&mut self, ctx: ServiceContext) -> ServiceResponse<String> {
         let tx_fee = self.calc_tx_fee(&ctx);
-
-        // Reset accumulated profit
-        let keys = self.profits.iter().map(|(k, _)| k).collect::<Vec<_>>();
-        for key in keys {
-            self.profits.remove(&key);
+        if tx_fee.is_err() {
+            return tx_fee.err().unwrap().into();
         }
 
-        let tx_fee_inlet_address: Address =
-            self.sdk.get_value(&TX_FEE_INLET_KEY.to_owned()).unwrap();
+        let tx_fee = tx_fee.unwrap();
+        if tx_fee == 0 {
+            return ServiceResponse::from_succeed("".to_owned());
+        }
 
-        let _ = self.transfer_from(&ctx, TransferFromPayload {
-            asset_id:  asset.id,
-            sender:    ctx.get_caller(),
-            recipient: tx_fee_inlet_address,
-            value:     tx_fee,
+        let tx_fee_inlet_address = self
+            .sdk
+            .get_value::<_, Address>(&TX_FEE_INLET_KEY.to_owned());
+        if tx_fee_inlet_address.is_none() {
+            return ServiceError::MissingInfo.into();
+        }
+
+        let tx_fee_inlet_address = tx_fee_inlet_address.unwrap();
+        let (tx, rx) = if tx_fee > 0 {
+            (ctx.get_caller(), tx_fee_inlet_address)
+        } else {
+            (tx_fee_inlet_address, ctx.get_caller())
+        };
+
+        let ret = self.hook_transfer_from(&ctx, HookTransferFromPayload {
+            sender:    tx,
+            recipient: rx,
+            value:     tx_fee.abs() as u64,
+            memo:      "collect tx fee".to_string(),
         });
+
+        if let Err(e) = ret {
+            if e.is_error() {
+                return ServiceResponse::from_error(e.code, e.error_message);
+            }
+        }
+
+        ServiceResponse::from_succeed("".to_owned())
     }
 
     #[hook_after]
     fn handle_miner_profit(&mut self, params: &ExecutorParams) {
-        let info: GovernanceInfo = self
+        let info = self
             .sdk
-            .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
-        let sender_address: Address = self
+            .get_value::<_, GovernanceInfo>(&INFO_KEY.to_owned());
+
+        let sender_address = self
             .sdk
-            .get_value(&MINER_PROFIT_OUTLET_KEY.to_owned())
-            .expect("send miner fee address should not be none");
+            .get_value::<_, Address>(&MINER_PROFIT_OUTLET_KEY.to_owned());
+
+        if info.is_none() || sender_address.is_none() {
+            return;
+        }
+
+        let info = info.unwrap();
+        let sender_address = sender_address.unwrap();
 
         let ctx_params = ServiceContextParams {
             tx_hash:         None,
@@ -370,15 +431,10 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             service_name:    String::new(),
             service_method:  String::new(),
             service_payload: String::new(),
-            extra:           None,
+            extra:           Some(ADMISSION_TOKEN.clone()),
             timestamp:       params.timestamp,
             events:          Rc::new(RefCell::new(vec![])),
         };
-
-        let ctx = ServiceContext::new(ctx_params);
-        let asset = self
-            .get_native_asset(&ctx)
-            .expect("Can not get native asset");
 
         let recipient_addr = if let Some(addr) = self.miners.get(&params.proposer) {
             addr
@@ -386,32 +442,37 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
             params.proposer.clone()
         };
 
-        let payload = TransferFromPayload {
-            asset_id:  asset.id,
+        let payload = HookTransferFromPayload {
             sender:    sender_address,
             recipient: recipient_addr,
             value:     info.miner_benefit,
+            memo:      "pay miner fee".to_string(),
         };
 
-        let _ = self.transfer_from(&ctx, payload);
+        let _ = self.hook_transfer_from(&ServiceContext::new(ctx_params), payload);
     }
 
-    fn calc_tx_fee(&mut self, ctx: &ServiceContext) -> u64 {
-        let profit = self.calc_profit_records(ctx);
+    fn calc_tx_fee(&mut self, ctx: &ServiceContext) -> Result<i128, ServiceError> {
+        if ctx.canceled() {
+            return Ok(0i128);
+        }
 
         let info: GovernanceInfo = self
             .sdk
             .get_value(&INFO_KEY.to_owned())
-            .expect("Admin should not be none");
+            .ok_or_else(|| ServiceError::NonAuthorized)?;
 
+        let profit = self.calc_profit_records(ctx)?;
         let fee: u64 = (profit as u128 * info.profit_deduct_rate_per_million as u128
             / MILLION as u128)
             .try_into()
-            .unwrap_or_else(|err| panic!(err));
+            .map_err(|_| ServiceError::Overflow)?;
 
-        let fee = self.calc_discount_fee(ctx, fee, &info.tx_fee_discount);
+        let fee = self
+            .calc_discount_fee(ctx, fee, &info.tx_fee_discount)?
+            .max(info.tx_floor_fee) as i128;
 
-        fee.max(info.tx_floor_fee)
+        Ok(fee - info.tx_failure_fee as i128)
     }
 
     fn calc_discount_fee(
@@ -419,10 +480,9 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         ctx: &ServiceContext,
         origin_fee: u64,
         discount_level: &[DiscountLevel],
-    ) -> u64 {
+    ) -> Result<u64, ServiceError> {
         let mut discount = HUNDRED;
-
-        let balance = self.get_balance(ctx);
+        let balance = self.get_balance(ctx)?;
 
         for level in discount_level.iter().rev() {
             if balance >= level.threshold {
@@ -433,22 +493,31 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
 
         let fee: u64 = (origin_fee as u128 * discount as u128 / HUNDRED as u128)
             .try_into()
-            .unwrap_or_else(|err| panic!(err));
-        fee
+            .map_err(|_| ServiceError::Overflow)?;
+        Ok(fee)
+    }
+
+    #[cfg(test)]
+    fn profits_len(&self) -> u64 {
+        self.profits.len()
+    }
+
+    #[cfg(test)]
+    fn get_balance(&self, _ctx: &ServiceContext) -> Result<u64, ServiceError> {
+        Ok(100_000)
     }
 
     #[cfg(not(test))]
-    fn get_balance(&self, ctx: &ServiceContext) -> u64 {
+    fn get_balance(&self, ctx: &ServiceContext) -> Result<u64, ServiceError> {
         let asset = self
             .get_native_asset(ctx)
-            .expect("Can not get native asset");
+            .map_err(|_| ServiceError::QueryBalance)?;
 
         let payload = GetBalancePayload {
             asset_id: asset.id,
             user:     ctx.get_caller(),
         };
-        let payload = serde_json::to_string(&payload)
-            .expect("Can not marshall GetBalancePayload in calc_discount_fee");
+        let payload = serde_json::to_string(&payload).map_err(ServiceError::JsonParse)?;
 
         let resp = self.sdk.read(
             &ctx,
@@ -459,22 +528,18 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         );
 
         if resp.is_error() {
-            panic!("query balance fails")
+            return Err(ServiceError::QueryBalance);
         }
 
         let balance = serde_json::from_str::<GetBalanceResponse>(resp.succeed_data.as_str())
-            .expect("Can not unmarshall GetBalancePayload in calc_discount_fee");
-        balance.balance
+            .map_err(ServiceError::JsonParse)?;
+        Ok(balance.balance)
     }
 
     fn is_admin(&self, ctx: &ServiceContext) -> bool {
-        let caller = ctx.get_caller();
-        let info: GovernanceInfo = self
-            .sdk
-            .get_value(&INFO_KEY.to_string())
-            .expect("Admin should not be none");
-
-        info.admin == caller
+        self.sdk
+            .get_value::<_, GovernanceInfo>(&INFO_KEY.to_string())
+            .map_or(false, |info| info.admin == ctx.get_caller())
     }
 
     fn get_metadata(&self, ctx: &ServiceContext) -> Result<Metadata, ServiceResponse<()>> {
@@ -513,23 +578,19 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         }
     }
 
-    fn transfer_from(
+    fn hook_transfer_from(
         &mut self,
         ctx: &ServiceContext,
-        payload: TransferFromPayload,
+        payload: HookTransferFromPayload,
     ) -> Result<(), ServiceResponse<()>> {
         let payload_json = match serde_json::to_string(&payload) {
             Ok(j) => j,
             Err(err) => return Err(ServiceError::JsonParse(err).into()),
         };
 
-        let resp = self.sdk.write(
-            &ctx,
-            Some(ADMISSION_TOKEN.clone()),
-            "asset",
-            "transfer_from",
-            &payload_json,
-        );
+        let resp = self
+            .sdk
+            .write(&ctx, None, "asset", "hook_transfer_from", &payload_json);
 
         if resp.is_error() {
             Err(ServiceResponse::from_error(resp.code, resp.error_message))
@@ -538,6 +599,7 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         }
     }
 
+    #[cfg(not(test))]
     fn get_native_asset(&self, ctx: &ServiceContext) -> Result<Asset, ServiceResponse<Asset>> {
         let resp = self.sdk.read(
             &ctx,
@@ -550,30 +612,38 @@ impl<SDK: ServiceSDK> GovernanceService<SDK> {
         if resp.is_error() {
             Err(ServiceResponse::from_error(resp.code, resp.error_message))
         } else {
-            let ret: Asset = serde_json::from_str(&resp.succeed_data).unwrap();
-            Ok(ret)
+            serde_json::from_str(&resp.succeed_data)
+                .map_err(|_| ServiceResponse::from_error(200, "decode json".to_string()))
         }
     }
 
-    fn emit_event<T: Serialize>(ctx: &ServiceContext, event: T) -> ServiceResponse<()> {
+    fn emit_event<T: Serialize>(
+        ctx: &ServiceContext,
+        name: String,
+        event: T,
+    ) -> ServiceResponse<()> {
         match serde_json::to_string(&event) {
             Err(err) => ServiceError::JsonParse(err).into(),
             Ok(json) => {
-                ctx.emit_event(json);
+                ctx.emit_event(name, json);
                 ServiceResponse::from_succeed(())
             }
         }
-    }
-
-    #[cfg(test)]
-    fn get_balance(&self, _ctx: &ServiceContext) -> u64 {
-        100_000
     }
 }
 
 #[derive(Debug, Display, From)]
 pub enum ServiceError {
     NonAuthorized,
+
+    #[display(fmt = "Can not get governance info")]
+    MissingInfo,
+
+    #[display(fmt = "calc overflow")]
+    Overflow,
+
+    #[display(fmt = "query balance failed")]
+    QueryBalance,
 
     #[display(fmt = "Parsing payload to json failed {:?}", _0)]
     JsonParse(serde_json::Error),
@@ -584,6 +654,9 @@ impl ServiceError {
         match self {
             ServiceError::NonAuthorized => 101,
             ServiceError::JsonParse(_) => 102,
+            ServiceError::MissingInfo => 103,
+            ServiceError::Overflow => 104,
+            ServiceError::QueryBalance => 105,
         }
     }
 }

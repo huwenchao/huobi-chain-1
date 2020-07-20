@@ -1,0 +1,18 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+- yejiayu
+- zeroqn
+- KaoImin 
+- LycrusHamster 
+- rev-chaos 
+- homura 
+- zhouyun-zoe 
+reviewers:
+- yejiayu
+- zeroqn
+- KaoImin 
+- LycrusHamster 
+- rev-chaos 
+- homura 
+- zhouyun-zoe 

@@ -7,9 +7,9 @@ use error::ServiceError;
 
 use expression::traits::ExpressionDataFeed;
 use types::{
-    ChangeOrgAdmin, ChangeOrgApproved, EvalUserTagExpression, Event, FixedTagList, Genesis,
-    GetUserTags, KycOrgInfo, NewOrgEvent, OrgName, RegisterNewOrg, TagName, UpdateOrgSupportTags,
-    UpdateUserTags, Validate,
+    ChangeOrgAdmin, ChangeOrgApproved, ChangeServiceAdmin, EvalUserTagExpression, FixedTagList,
+    Genesis, GetUserTags, KycOrgInfo, NewOrgEvent, OrgName, RegisterNewOrg, TagName,
+    UpdateOrgSupportTags, UpdateUserTags, Validate,
 };
 
 use binding_macro::{cycles, genesis, service};
@@ -32,12 +32,16 @@ const KYC_SERVICE_ADMIN_KEY: &str = "kyc_service_admin";
 
 macro_rules! require_service_admin {
     ($service:expr, $ctx:expr) => {{
-        let admin = $service
+        let admin = if let Some(tmp) = $service
             .sdk
-            .get_value(&KYC_SERVICE_ADMIN_KEY.to_owned())
-            .expect("admin not found");
+            .get_value::<_, Address>(&KYC_SERVICE_ADMIN_KEY.to_owned())
+        {
+            tmp
+        } else {
+            return ServiceError::NonAuthorized.into();
+        };
 
-        if $ctx.get_caller() != admin {
+        if admin != $ctx.get_caller() {
             return ServiceError::NonAuthorized.into();
         }
     }};
@@ -147,7 +151,7 @@ impl<SDK: ServiceSDK> KycService<SDK> {
 
     #[cycles(21_000)]
     #[read]
-    fn get_orgs(&self, ctx: ServiceContext, _: String) -> ServiceResponse<Vec<OrgName>> {
+    fn get_orgs(&self, ctx: ServiceContext) -> ServiceResponse<Vec<OrgName>> {
         let mut org_names = Vec::new();
 
         for (org_name, _) in self.orgs_approved.iter() {
@@ -267,12 +271,9 @@ impl<SDK: ServiceSDK> KycService<SDK> {
         require_org_exists!(self, payload.org_name);
 
         self.orgs_approved
-            .insert(payload.org_name.clone(), payload.approved.clone());
+            .insert(payload.org_name.clone(), payload.approved);
 
-        Self::emit_event(&ctx, Event {
-            topic: "change_org_approved".to_owned(),
-            data:  payload,
-        })
+        Self::emit_event(&ctx, "ChangeOrgApproved".to_owned(), payload)
     }
 
     #[cycles(21_000)]
@@ -280,12 +281,16 @@ impl<SDK: ServiceSDK> KycService<SDK> {
     fn change_service_admin(
         &mut self,
         ctx: ServiceContext,
-        new_admin: Address,
+        payload: ChangeServiceAdmin,
     ) -> ServiceResponse<()> {
+        if let Err(e) = payload.validate() {
+            return e.into();
+        }
+
         require_service_admin!(self, &ctx);
 
         self.sdk
-            .set_value(KYC_SERVICE_ADMIN_KEY.to_owned(), new_admin);
+            .set_value(KYC_SERVICE_ADMIN_KEY.to_owned(), payload.new_admin);
         ServiceResponse::from_succeed(())
     }
 
@@ -306,10 +311,7 @@ impl<SDK: ServiceSDK> KycService<SDK> {
         org.admin = payload.new_admin.clone();
         self.orgs.insert(payload.name.clone(), org);
 
-        Self::emit_event(&ctx, Event {
-            topic: "change_org_admin".to_owned(),
-            data:  payload,
-        })
+        Self::emit_event(&ctx, "ChangeOrgAdmin".to_owned(), payload)
     }
 
     #[cycles(21_000)]
@@ -348,12 +350,9 @@ impl<SDK: ServiceSDK> KycService<SDK> {
         self.orgs.insert(new_org.name.to_owned(), org);
         self.orgs_approved.insert(new_org.name.to_owned(), false);
 
-        Self::emit_event(&ctx, Event {
-            topic: "register_org".to_owned(),
-            data:  NewOrgEvent {
-                name:           new_org.name,
-                supported_tags: new_org.supported_tags,
-            },
+        Self::emit_event(&ctx, "RegisterOrg".to_owned(), NewOrgEvent {
+            name:           new_org.name,
+            supported_tags: new_org.supported_tags,
         })
     }
 
@@ -375,10 +374,7 @@ impl<SDK: ServiceSDK> KycService<SDK> {
         org.supported_tags = payload.supported_tags.clone();
         self.orgs.insert(payload.org_name.clone(), org);
 
-        Self::emit_event(&ctx, Event {
-            topic: "update_supported_tags".to_owned(),
-            data:  payload,
-        })
+        Self::emit_event(&ctx, "UpdateSupportedTag".to_owned(), payload)
     }
 
     #[cycles(21_000)]
@@ -442,17 +438,18 @@ impl<SDK: ServiceSDK> KycService<SDK> {
             self.user_tags.remove(&tags_key);
         }
 
-        Self::emit_event(&ctx, Event {
-            topic: "update_user_tags".to_owned(),
-            data:  payload,
-        })
+        Self::emit_event(&ctx, "UpdateUserTag".to_owned(), payload)
     }
 
-    fn emit_event<T: Serialize>(ctx: &ServiceContext, event: T) -> ServiceResponse<()> {
+    fn emit_event<T: Serialize>(
+        ctx: &ServiceContext,
+        name: String,
+        event: T,
+    ) -> ServiceResponse<()> {
         match serde_json::to_string(&event) {
             Err(err) => ServiceError::Serde(err).into(),
             Ok(json) => {
-                ctx.emit_event(json);
+                ctx.emit_event(name, json);
                 ServiceResponse::from_succeed(())
             }
         }

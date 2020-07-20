@@ -1,3 +1,4 @@
+#![allow(clippy::mutable_key_type)]
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
@@ -14,6 +15,26 @@ use protocol::ProtocolResult;
 
 use crate::ServiceError;
 
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct IssuerWithBalance {
+    pub addr:    Address,
+    pub balance: u64,
+}
+
+impl IssuerWithBalance {
+    pub fn new(addr: Address, balance: u64) -> Self {
+        IssuerWithBalance { addr, balance }
+    }
+
+    pub fn verify(&self) -> Result<(), &'static str> {
+        if self.addr == Address::default() {
+            Err("invalid issuer")
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Payload
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct InitGenesisPayload {
@@ -22,10 +43,11 @@ pub struct InitGenesisPayload {
     pub symbol:      String,
     pub supply:      u64,
     pub precision:   u64,
-    pub issuer:      Address,
+    pub issuers:     Vec<IssuerWithBalance>,
     pub fee_account: Address,
     pub fee:         u64,
     pub admin:       Address,
+    pub relayable:   bool,
 }
 
 impl InitGenesisPayload {
@@ -33,7 +55,7 @@ impl InitGenesisPayload {
         if self.id == Hash::default() {
             return Err("invalid asset id");
         }
-        if self.issuer == Address::default() {
+        if self.issuers.iter().any(|issuer| issuer.verify().is_err()) {
             return Err("invalid issuer");
         }
         if self.fee_account == Address::default() {
@@ -41,6 +63,19 @@ impl InitGenesisPayload {
         }
         if self.admin == Address::default() {
             return Err("invalid admin");
+        }
+
+        let mut total_balance = 0u64;
+        for issuer in self.issuers.iter() {
+            let (checked_value, overflow) = total_balance.overflowing_add(issuer.balance);
+            if overflow {
+                return Err("sum of issuers balance overflow");
+            }
+
+            total_balance = checked_value;
+        }
+        if total_balance != self.supply {
+            return Err("sum of issuers balance isn't equal to supply");
         }
 
         Ok(())
@@ -53,6 +88,7 @@ pub struct CreateAssetPayload {
     pub symbol:    String,
     pub supply:    u64,
     pub precision: u64,
+    pub relayable: bool,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -65,6 +101,7 @@ pub struct TransferPayload {
     pub asset_id: Hash,
     pub to:       Address,
     pub value:    u64,
+    pub memo:     String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -73,6 +110,7 @@ pub struct TransferEvent {
     pub from:     Address,
     pub to:       Address,
     pub value:    u64,
+    pub memo:     String,
 }
 
 pub type ApprovePayload = TransferPayload;
@@ -83,6 +121,7 @@ pub struct ApproveEvent {
     pub grantor:  Address,
     pub grantee:  Address,
     pub value:    u64,
+    pub memo:     String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -91,6 +130,15 @@ pub struct TransferFromPayload {
     pub sender:    Address,
     pub recipient: Address,
     pub value:     u64,
+    pub memo:      String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct HookTransferFromPayload {
+    pub sender:    Address,
+    pub recipient: Address,
+    pub value:     u64,
+    pub memo:      String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -100,6 +148,7 @@ pub struct TransferFromEvent {
     pub sender:    Address,
     pub recipient: Address,
     pub value:     u64,
+    pub memo:      String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -137,7 +186,8 @@ pub struct Asset {
     pub symbol:    String,
     pub supply:    u64,
     pub precision: u64,
-    pub issuer:    Address,
+    pub issuers:   Vec<Address>,
+    pub relayable: bool,
 }
 
 pub struct AssetBalance {
@@ -270,7 +320,7 @@ impl Default for AssetBalance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MintAsset {
+pub struct MintAssetPayload {
     pub asset_id: Hash,
     pub to:       Address,
     pub amount:   u64,
@@ -279,28 +329,35 @@ pub struct MintAsset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BurnAsset {
+pub struct BurnAssetPayload {
     pub asset_id: Hash,
     pub amount:   u64,
     pub proof:    Hex,
     pub memo:     String,
 }
 
+pub type RelayAssetPayload = BurnAssetPayload;
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MintEvent {
+pub struct MintAssetEvent {
     pub asset_id: Hash,
     pub to:       Address,
     pub amount:   u64,
+    pub proof:    Hex,
+    pub memo:     String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BurnEvent {
+pub struct BurnAssetEvent {
     pub asset_id: Hash,
     pub from:     Address,
     pub amount:   u64,
+    pub proof:    Hex,
+    pub memo:     String,
 }
+pub type RelayAssetEvent = BurnAssetEvent;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct NewAdmin {
+pub struct ChangeAdminPayload {
     pub addr: Address,
 }
