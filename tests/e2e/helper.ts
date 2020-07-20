@@ -1,9 +1,21 @@
+import { retry } from '@mutadev/client';
+// eslint-disable-next-line no-unused-vars
+import { Account } from '@mutadev/account';
+// eslint-disable-next-line no-unused-vars
+import { Hash } from '@mutadev/types';
 import {
-  client, admin, feeAssetID,
+  client,
+  admin,
+  feeAssetID,
   // eslint-disable-next-line
-} from './utils';
+} from "./utils";
 
-export async function transfer(txSender, assetID, to, value) {
+export async function transfer(
+  txSender: Account,
+  assetID: any,
+  to: any,
+  value: any,
+) {
   const payload = {
     asset_id: assetID,
     to,
@@ -14,22 +26,23 @@ export async function transfer(txSender, assetID, to, value) {
     method: 'transfer',
     payload,
     serviceName: 'asset',
+    sender: txSender.address,
   });
 
   const signedTx = txSender.signTransaction(tx);
   const hash = await client.sendTransaction(signedTx);
-  const receipt = await client.getReceipt(hash);
+  const receipt = await retry(() => client.getReceipt(hash));
 
   return receipt;
 }
 
-export async function addFeeTokenToAccounts(accounts) {
+export async function addFeeTokenToAccounts(accounts: Array<Hash>) {
   await Promise.all(
     accounts.map((account) => transfer(admin, feeAssetID, account, 10000)),
   );
 }
 
-export async function getBalance(assetID, user) {
+export async function getBalance(assetID: string, user: string) {
   const res = await client.queryService({
     serviceName: 'asset',
     method: 'get_balance',
