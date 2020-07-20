@@ -11,6 +11,24 @@ timestamp = 0
 prevhash = "0x44915be5b6c20b0678cf05fcddbbaa832e25d7e6ac538784cd5c24de00d47472"
 
 [[services]]
+name = "authorization"
+payload = '''
+{
+    "admin": "0xcff1002107105460941f797828f468667aa1a2db",
+    "verified_items": [
+        {
+            "service_name": "admission_control",
+            "method_name": "is_permitted"
+        },
+        {
+            "service_name": "admission_control",
+            "method_name": "is_valid"
+        }
+    ]
+}
+'''
+
+[[services]]
 name = "asset"
 payload = '''
 {
@@ -22,6 +40,8 @@ payload = '''
     "issuer": "0xcff1002107105460941f797828f468667aa1a2db",
     "fee": 1,
     "fee_account": "0xcff1002107105460941f797828f468667aa1a2db"
+    "admin": "0xcff1002107105460941f797828f468667aa1a2db",
+    "relayable": true
 }
 '''
 
@@ -50,24 +70,61 @@ payload = '''
     "tx_num_limit": 20000,
     "max_tx_size": 1048576
 }
+'''
 
 [[services]]
-name = "node_manager"
-# private key of this admin:
-# 2b672bb959fa7a852d7259b129b65aee9c83b39f427d6f7bded1f58c4c9310c2
-payload = '{"admin": "0xcff1002107105460941f797828f468667aa1a2db"}'
+name = "governance"
+payload = '''
+{
+    "info": {
+        "admin": "0xcff1002107105460941f797828f468667aa1a2db",
+        "tx_failure_fee": 1000,
+        "tx_floor_fee": 100,
+        "profit_deduct_rate_per_million": 10,
+        "tx_fee_discount": [
+            {"threshold": 10, "discount_percent": 10}
+        ],
+        "miner_benefit": 3
+    },
+    "tx_fee_inlet_address": "0xcff1002107105460941f797828f468667aa1a2db",
+    "miner_profit_outlet_address": "0x9cccacbb8a4b0353d42138613b2db72d6a661cf4",
+    "miner_charge_map": [
+        {"address": "0x9cccacbb8a4b0353d42138613b2db72d6a661cf4", "miner_charge_address": "0x9cccacbb8a4b0353d42138613b2db72d6a661cf4"}
+    ]
+}
+'''
 
 # you can enable whitelist in riscv with init payload below
-# [[services]]
-# name = 'riscv'
-# payload = '''
-# {
-#     "admins": ["0xcff1002107105460941f797828f468667aa1a2db"],
-#     "enable_whitelist": true,
-#     "whitelist": ["0x9cccacbb8a4b0353d42138613b2db72d6a661cf4"]
-# }
-# '''
-```
+[[services]]
+name = 'riscv'
+payload = '''
+{
+    "enable_authorization": true,
+    "admins": ["0xcff1002107105460941f797828f468667aa1a2db"],
+    "deploy_auth": ["0x9cccacbb8a4b0353d42138613b2db72d6a661cf4"]
+}
+'''
+
+[[services]]
+name = "kyc"
+payload = '''
+{
+   "org_name": "huobi",
+   "org_description": "",
+   "org_admin": "0xcff1002107105460941f797828f468667aa1a2db",
+   "supported_tags": [ "name", "gender", "age" ],
+   "service_admin": "0xcff1002107105460941f797828f468667aa1a2db"
+}
+'''
+
+[[services]]
+name = "admission_control"
+payload = '''
+{
+   "admin": "0xcff1002107105460941f797828f468667aa1a2db",
+   "deny_list": [ "0xd2d268749ffe54def4e2e73e5e06a4ebf0d6f585" ]
+}
+'''
 
 创世块的初始化参数：
 
@@ -76,6 +133,12 @@ payload = '{"admin": "0xcff1002107105460941f797828f468667aa1a2db"}'
 
 `services` 为各个 service 的初始化参数。各 service 的初始化参数说明：
 
+- `authorization`:Authorization Service 是被交易池调用，对交易进行检查的 service。Authorization Service 本身不提供任何的检查逻辑，而是去调用注册在其中的 service 及其对应的方法进行校验。默认配置下，是在 Authorization Service 中注册了两个检查项，分别是 admission_control service 中的 `is_permitted` 方法和 `admission_control service` 中的 is_valid 方法
+  - `admin`: 管理员，可以对注册的检查项进行增删
+  - `verified_items`:
+    - `service_name`:注册的 service
+    - `method_name`: 注册的方法
+
 - `asset`: 如果链需要发行原生资产，可以参考上面的例子填写，否则可以去掉
   - `id`: 资产的唯一 id，建议设置成 hash ，以免在之后和链上其他资产重复
   - `name`: 资产名字
@@ -83,8 +146,11 @@ payload = '{"admin": "0xcff1002107105460941f797828f468667aa1a2db"}'
   - `supply`: 资产发行总量
   - `precision`: 资产精度
   - `issuer`: 发行方地址
-  - `fee`: 交易固定手续费
-  - `fee_account`: 交易手续费收取地址
+  - `fee`: 当前版本已被废弃
+  - `fee_account`: 当前版本已被废弃
+  - `admin`: 管理员地址，更新 metadata
+  - `relayable`: asset 能否调用 `relay` 方法销毁资产
+
 - `metadata`: 链的元数据，必须填写
   - `chain_id`: 链唯一 id，建议设置为任意 hash
   - `common_ref`: BLS 签名需要
@@ -103,12 +169,37 @@ payload = '{"admin": "0xcff1002107105460941f797828f468667aa1a2db"}'
   - `brake_ratio`: brake 阶段的超时时间与出块时间的比例
   - `tx_num_limit`: 每一个块里最多可以打包的交易数
   - `max_tx_size`: 单个交易最大的字节数
-- `node_manager`:
-  - 如果有共同认可的超级管理员，则将其地址填入此处，否则可以填写全零地址
+
+- `governance`: 负责节点的共识配置以及权限的管理（metadata)，和手续费计费以及矿工费的支付。
+  - `admin`: 管理员地址
+  - `tx_failure_fee`: 即使失败也要付的费用
+  - `tx_floor_fee`: 最低手续费金额
+  - `profit_deduct_rate_per_million`: 从 profit 中收取的手续费率。总 Profit 是由各个 service 收取 profit 后注册到 `governance service` 然后求和计算得来的。
+  - `tx_fee_discount`:
+    - `threshold`: 用户账户余额的阈值
+    - `discount_percent`: 折扣率
+  - `miner_benefit`: 矿工奖励（每出一个块，矿工收取的 HT 数量）
+  - `tx_fee_inlet_address`: 手续费收取的地址
+  - `miner_profit_outlet_address`: 该地址需预存一定数量的 HT，从该地址把矿工奖励分发给矿工
+  - `miner_charge_map`:
+    - `address`: 矿工地址
+    - `miner_charge_address`: 矿工收取奖励的地址
+
 - `riscv`
-  - `admins`: 管理员地址，可设置多个，和上面的 `node_manager` 的 `admin` 地址是独立开来的
-  - `enable_whitelist`: 是否开启白名单功能，需在起链时设置好
-  - `whitelist`: 用户的白名单地址，如果 `enable_whitelist` 设置为 `true`，则只有在白名单里的地址才被允许部署合约
+  - `enable_authorization`: 是否开启授权模式，开启后，合约的部署和执行都需要授权
+  - `admins`: 服务的管理员地址列表
+  - `deploy_auth`: 部署权限预授权地址
+
+- `kyc`：为用户提供链上的 KYC 服务
+  - `org_name`: KYC机构的名称
+  - `org_description`: KYC机构的描述
+  - `org_admin`: KYC机构的管理员地址
+  - `supported_tags`: 用户的 Tag
+  - `service_admin`: KYC 服务的管理员地址
+
+- `admission_control`:
+  - `admin`: 管理员地址，管理 `deny_list`
+  - `deny_list`: 禁止名单，在该名单里的地址无法被检验通过
 
 ## 链的运行配置
 
@@ -127,6 +218,7 @@ graphql_uri = "/graphql"
 graphiql_uri = "/graphiql"
 workers = 0 # if 0, uses number of available logical cpu as threads count.
 maxconn = 25000
+max_payload_size = 10485760  # 10MB
 
 [network]
 listening_address = "0.0.0.0:1337"
@@ -152,6 +244,14 @@ log_path = "logs/"
 log_to_file = true
 metrics = true
 modules_level = { riscv_debug = "debug" }
+
+[rocksdb]
+max_open_files = 1024
+
+# [apm]
+# service_name = "muta"
+# tracing_address = "127.0.0.1:6831"
+# tracing_batch_size = 50
 ```
 
 - `privkey`: 节点私钥，节点的唯一标识，在作为 bootstraps 节点时，需要给出地址和该私钥对应的公钥让其他节点连接；如果是出块节点，该私钥对应的地址需要在 consensus verifier_list 中
@@ -162,6 +262,7 @@ modules_level = { riscv_debug = "debug" }
   - `graphiql_uri`: GraphiQL 访问路径
   - `workers`: 处理 http 的线程数量，填 0 的话，会默认按 CPU 的核数
   - `maxconn`: 最大连接数
+  - `max_payload_size`: 交易序列化后的大小，最大的限制，以bytes为单位
 - `network`:
   - `listening_address`: 链 p2p 网络监听地址
   - `rpc_timeout`: RPC 调用（例如从其它节点拉交易）超时时间，单位为秒
@@ -182,6 +283,8 @@ modules_level = { riscv_debug = "debug" }
   - `metrics`: 是否输出 metrics。logger 模块中有专门的 metrics 输出函数，如有需要，可以用来输出 metrics 日志，不受全局日志级别的影响，且对应的日志会输出到专门的文件。
   - `log_path`: 会在该路径生成两个日志文件：`muta.log` 和 `metrics.log`。`metrics.log`中包含了专门的 metrics 日志，`muta.log` 中包含了其它所有 log 输出。
   - `modules_level`: 对特定模块指定不同于全局的日志级别
+- `rocksdb`:
+  - `max_open_files`: rocksdb 允许打开的文件描述符（FD）的最大值
 
 ## 日志示例
 
