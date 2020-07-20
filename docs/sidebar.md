@@ -16,6 +16,8 @@
 	- [Node Manager Service](/node_manager_service.md)
 	- [Asset Service](/asset_service.md)
 	- [RISC-V Service](/riscv_service.md)
+	- [Admission Control Service](/admission_control_service.md)
+	- [KYC Service](/kyc_service.md)
 - **合约开发**
 	- [从0开发RISC-V合约教程(C语言)](/contract_demo.md)
 - **接口**
