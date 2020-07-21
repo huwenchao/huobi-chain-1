@@ -37,7 +37,7 @@ payload = '''
     "symbol": "HTTest",
     "supply": 50000000000000000,
     "precision": 8,
-    "issuer": "0xcff1002107105460941f797828f468667aa1a2db",
+    "issuers": [{"addr": "0xcff1002107105460941f797828f468667aa1a2db", "balance": 50000000000000000}],
     "fee": 1,
     "fee_account": "0xcff1002107105460941f797828f468667aa1a2db"
     "admin": "0xcff1002107105460941f797828f468667aa1a2db",
@@ -145,10 +145,10 @@ payload = '''
   - `symbol`: 资产简称
   - `supply`: 资产发行总量
   - `precision`: 资产精度
-  - `issuer`: 发行方地址
+  - `issuer`: 预存资产的地址，在产生创世块的时候，将会在这些地址预存对应数量的代币
   - `fee`: 当前版本已被废弃
   - `fee_account`: 当前版本已被废弃
-  - `admin`: 管理员地址，更新 metadata
+  - `admin`: 管理员地址
   - `relayable`: asset 能否调用 `relay` 方法销毁资产
 
 - `metadata`: 链的元数据，必须填写
